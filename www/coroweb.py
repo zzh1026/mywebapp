@@ -13,7 +13,7 @@ import os
 from urllib import parse
 
 from aiohttp import web
-from apis import APIError
+from www.apis import APIError
 
 
 def get(path):
@@ -40,8 +40,8 @@ def post(path):
 
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
+        def wrapper(*args, **kw):
+            return func(*args, **kw)
 
         wrapper.__method__ = 'POST'
         wrapper.__route__ = path
@@ -110,7 +110,8 @@ class RequestHandler(object):
         self._named_kw_args = get_named_kw_args(fn)
         self._required_kw_args = get_required_kw_args(fn)
 
-    async def __call__(self, request):
+    @asyncio.coroutine
+    def __call__(self, request):
         kw = None
         if self._has_var_kw_arg or self._has_named_kw_args or self._required_kw_args:
             if request.method == 'POST':
@@ -118,12 +119,12 @@ class RequestHandler(object):
                     return web.HTTPBadRequest('Missing Content-Type.')
                 ct = request.content_type.lower()
                 if ct.startswith('application/json'):
-                    params = await request.json()
+                    params = yield from request.json()
                     if not isinstance(params, dict):
                         return web.HTTPBadRequest('JSON body must be object.')
                     kw = params
                 elif ct.startswith('application/x-www-form-urlencoded') or ct.startswith('multipart/form-data'):
-                    params = await request.post()
+                    params = yield from request.post()
                     kw = dict(**params)
                 else:
                     return web.HTTPBadRequest('Unsupported Content-Type: %s' % request.content_type)
@@ -133,7 +134,6 @@ class RequestHandler(object):
                     kw = dict()
                     for k, v in parse.parse_qs(qs, True).items():
                         kw[k] = v[0]
-
         if kw is None:
             kw = dict(**request.match_info)
         else:
@@ -149,7 +149,6 @@ class RequestHandler(object):
                 if k in kw:
                     logging.warning('Duplicate arg name in named arg and kw args: %s' % k)
                 kw[k] = v
-
         if self._has_request_arg:
             kw['request'] = request
         # check required kw:
@@ -159,7 +158,7 @@ class RequestHandler(object):
                     return web.HTTPBadRequest('错误的参数: %s' % name)
         logging.info('call with args: %s' % str(kw))
         try:
-            r = await self._func(**kw)
+            r = yield from self._func(**kw)
             return r
         except APIError as e:
             return dict(error=e.error, data=e.data, message=e.message)

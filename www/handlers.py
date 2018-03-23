@@ -6,18 +6,19 @@
 __author__ = 'zzh'
 
 '添加URL处理函数'
+import re, time, json, logging, hashlib, base64, asyncio
+from aiohttp import web
+
 from www.coroweb import get, post
 from www.models import User, Comment, Blog, next_id
-import re, time, json, logging, hashlib, base64, asyncio
 from www.apis import APIError, APIValueError, APIResourceNotFoundError
-from aiohttp import web
 from www.config import configs
 
 COOKIE_NAME = 'awesession'
 _COOKIE_KEY = configs.session.secret
 
 
-# 为用户创建一个cookie
+# 为用户加密cookie
 def user2cookie(user, max_age):
     # build cookie string by: id-expires-sha1
     expires = str(int(time.time() + max_age))
@@ -26,6 +27,7 @@ def user2cookie(user, max_age):
     return '-'.join(L)
 
 
+# 解密cookie
 async def cookie2user(cookie_str):
     '''
     Parse cookie and load user if cookie is valid.
@@ -91,12 +93,12 @@ def signin():
 
 # 登录成功
 @post('/api/authenticate')
-async def authenticate(*, email, passwd):
+def authenticate(*, email, passwd):
     if not email:
         raise APIValueError('email', 'Invalid email.')
     if not passwd:
         raise APIValueError('passwd', 'Invalid password.')
-    users = await User.findAll('email=?', [email])
+    users = yield from User.findAll('email=?', [email])
     if len(users) == 0:
         raise APIValueError('email', 'Email not exist.')
     user = users[0]
@@ -107,7 +109,6 @@ async def authenticate(*, email, passwd):
     sha1.update(passwd.encode('utf-8'))
     if user.passwd != sha1.hexdigest():
         raise APIValueError('passwd', 'Invalid password.')
-
     # authenticate ok, set cookie:
     r = web.Response()
     r.set_cookie(COOKIE_NAME, user2cookie(user, 86400), max_age=86400, httponly=True)
@@ -132,25 +133,28 @@ _RE_SHA1 = re.compile(r'^[0-9a-f]{40}$')
 
 # 注册成功
 @post('/api/users')
-async def api_register_user(*, email, name, passwd):
+def api_register_user(*, email, name, passwd):
     if not name or not name.strip():
         raise APIValueError('name')
     if not email or not _RE_EMAIL.match(email):
         raise APIValueError('email')
     if not passwd or not _RE_SHA1.match(passwd):
         raise APIValueError('passwd')
-    users = await User.findAll('email=?', [email])
+    users = yield from User.findAll('email=?', [email])
     if len(users) > 0:
         raise APIError('register:failed', 'email', 'Email is already in use.')
     uid = next_id()
     sha1_passwd = '%s:%s' % (uid, passwd)
     user = User(id=uid, name=name.strip(), email=email, passwd=hashlib.sha1(sha1_passwd.encode()).hexdigest(),
                 image='http://www.gravatar.com/avatar/%s?d=mm&s=120' % hashlib.md5(email.encode()).hexdigest())
-    await user.save()
+    yield from user.save()
 
     # make session cookie:
     r = web.Response()
     r.set_cookie(COOKIE_NAME, user2cookie(user, 86400), max_age=86400, httponly=True)
+    user.passwd = '******'
+    r.content_type = 'application/json'
+    r.body = json.dumps(user, ensure_ascii=False).encode('utf-8')
     return r
 
 
