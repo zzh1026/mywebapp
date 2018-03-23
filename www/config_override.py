@@ -9,6 +9,6 @@ __author__ = 'zzh'
 # 直接修改config_default.py不是一个好办法，更好的方法是编写一个config_override.py，用来覆盖某些默认设置：
 configs = {
     'db': {
-        'host': '192.168.0.100'
+        'host': '127.0.0.1'
     }
 }

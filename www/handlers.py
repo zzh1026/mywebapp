@@ -73,7 +73,7 @@ async def index(request):
 
 
 # 获取用户列表
-@get('/api/users')
+@get('/api/userss')
 async def api_get_users():
     users = await User.findAll(orderBy='created_at desc')
     for u in users:
@@ -91,8 +91,30 @@ def signin():
 
 # 登录成功
 @post('/api/authenticate')
-def authenticate(*, email, passwd):
-    pass
+async def authenticate(*, email, passwd):
+    if not email:
+        raise APIValueError('email', 'Invalid email.')
+    if not passwd:
+        raise APIValueError('passwd', 'Invalid password.')
+    users = await User.findAll('email=?', [email])
+    if len(users) == 0:
+        raise APIValueError('email', 'Email not exist.')
+    user = users[0]
+    # check passwd:
+    sha1 = hashlib.sha1()
+    sha1.update(user.id.encode('utf-8'))
+    sha1.update(b':')
+    sha1.update(passwd.encode('utf-8'))
+    if user.passwd != sha1.hexdigest():
+        raise APIValueError('passwd', 'Invalid password.')
+
+    # authenticate ok, set cookie:
+    r = web.Response()
+    r.set_cookie(COOKIE_NAME, user2cookie(user, 86400), max_age=86400, httponly=True)
+    user.passwd = '******'
+    r.content_type = 'application/json'
+    r.body = json.dumps(user, ensure_ascii=False).encode('utf-8')
+    return r
 
 
 # 注册
@@ -135,4 +157,8 @@ async def api_register_user(*, email, name, passwd):
 # 注销, 退出登录
 @get('/signout')
 def signout(request):
-    pass
+    referer = request.headers.get('Referer')
+    r = web.HTTPFound(referer or '/')
+    r.set_cookie(COOKIE_NAME, '-deleted-', max_age=0, httponly=True)
+    logging.info('user signed out.')
+    return r

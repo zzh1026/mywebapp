@@ -11,7 +11,7 @@ configs = {
         'port': 3306,
         'user': 'root',
         'password': 'wszzh19921026',
-        'database': 'awesome'
+        'db': 'awesome'
     },
     'session': {
         'secret': 'AwEsOmE'
